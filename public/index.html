@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CLI Script Dashboard &amp; Runner</title>
+  <meta name="description" content="A high-performance dark-themed web dashboard and Express wrapper to run CLI scripts in the background with SSE live terminal streaming, regex progress parsing, input uploads, crash-resume, and output exports.">
+  <meta property="og:title" content="CLI Script Dashboard &amp; Runner">
+  <meta property="og:description" content="A high-performance dark-themed web dashboard and Express wrapper to run CLI scripts in the background with SSE live terminal streaming, regex progress parsing, input uploads, crash-resume, and output exports.">
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS CDN for Standalone / Static Execution -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            elegant: {
+              canvas: '#0a0a0a',
+              card: '#0f0f0f',
+              header: '#0d0d0d',
+              deep: '#050505',
+              border: '#1f1f1f',
+              borderMuted: '#262626',
+              borderSubtle: '#333333',
+              emerald: '#10b981',
+              emeraldHover: '#059669',
+              textPrimary: '#e0e0e0',
+              textSecondary: '#aaa',
+              textMuted: '#666',
+              textSubtle: '#555',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  
+  <style>
+    body {
+      background-color: #0a0a0a;
+      color: #e0e0e0;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    /* Custom Scrollbar for Terminal & Body */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #050505;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #222222;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #333333;
+    }
+    .terminal-scroll {
+      scroll-behavior: smooth;
+    }
+    .emerald-glow {
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+    }
+    .emerald-glow-lg {
+      box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.25);
+    }
+  </style>
+</head>
+<body class="bg-[#0a0a0a] text-[#e0e0e0] font-sans min-h-screen selection:bg-emerald-500 selection:text-black antialiased">
+
+  <!-- Main Container -->
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <!-- ── TOP HEADER (Elegant Dark Bar) ── -->
+    <header id="app-header" class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 px-6 py-4 rounded-xl bg-[#0d0d0d] border border-[#1f1f1f]">
+      <div class="flex items-center space-x-3.5">
+        <div class="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
+        <div>
+          <div class="flex items-center space-x-2.5">
+            <h1 id="app-title" class="text-lg font-medium tracking-tight text-white flex items-center gap-2">
+              <span>CLI Script Dashboard &amp; Runner</span>
+              <span id="script-name-badge" class="text-xs px-2.5 py-0.5 rounded font-mono bg-[#141414] text-[#888] border border-[#262626]">email-scraper.js</span>
+            </h1>
+          </div>
+          <p id="app-subtitle" class="text-xs text-[#666] tracking-wide mt-0.5">Huzaifa Cyber Proxy • Background Process Orchestrator • Live SSE Terminal Stream</p>
+        </div>
+      </div>
+
+      <!-- Server & SSE Connection Badges -->
+      <div class="flex items-center space-x-3">
+        <div id="connection-status-pill" class="flex items-center space-x-2.5 px-3 py-1.5 rounded bg-[#141414] border border-[#222] text-xs">
+          <span id="connection-indicator-dot" class="h-2 w-2 rounded-full bg-amber-400 animate-ping"></span>
+          <span id="connection-status-text" class="text-[#888] font-mono text-[11px] uppercase tracking-wider">Connecting SSE...</span>
+        </div>
+        <div class="h-4 w-[1px] bg-[#222]"></div>
+        <button id="selftest-btn" title="Run self-test suite (--selftest)" class="text-xs font-mono px-3 py-1.5 rounded bg-[#1a1a1a] hover:bg-[#222] border border-[#333] text-[#e0e0e0] transition-colors flex items-center gap-1.5 cursor-pointer">
+          <span class="text-emerald-400">🧪</span> <span>Self-Test</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- ── CRASH-RESUME / CHECKPOINT BANNER (Visible if cache.json exists) ── -->
+    <div id="checkpoint-banner" class="hidden p-5 rounded-xl bg-[#0f0f0f] border border-amber-900/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div class="flex items-center space-x-3.5">
+        <span class="text-xl text-amber-400">🔄</span>
+        <div>
+          <h2 class="text-xs uppercase tracking-[0.2em] text-amber-300 font-semibold">Checkpoint Detected (Crash-Resume Ready)</h2>
+          <p id="checkpoint-desc" class="text-xs text-amber-200/70 mt-0.5">Previous session found <strong id="checkpoint-count" class="text-amber-300 font-mono">0</strong> completed URLs saved in <code class="bg-[#050505] border border-[#222] px-1.5 py-0.5 rounded font-mono text-amber-200">cache.json</code>.</p>
+        </div>
+      </div>
+      <div class="flex items-center space-x-3 text-xs">
+        <label class="flex items-center space-x-2 cursor-pointer bg-[#141414] px-3 py-1.5 rounded border border-[#222] hover:border-[#333] transition">
+          <input type="checkbox" id="resume-checkbox" checked class="rounded border-[#333] text-emerald-500 focus:ring-emerald-500/30 bg-[#050505]">
+          <span class="text-[#ccc] font-medium text-xs">Resume from checkpoint</span>
+        </label>
+        <button id="reset-checkpoint-btn" class="px-3 py-1.5 text-xs text-rose-300 hover:text-white bg-[#1a1a1a] hover:bg-rose-950/60 border border-[#333] hover:border-rose-900/50 rounded transition cursor-pointer">
+          Start Fresh (Reset)
+        </button>
+      </div>
+    </div>
+
+    <!-- ── ROW 1: CONTROLS & FILE MANAGEMENT ── -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- Left Column: Input CSV & Direct Data (5 Cols) -->
+      <div class="lg:col-span-5 bg-[#0f0f0f] border border-[#1f1f1f] rounded-xl p-6 shadow-lg flex flex-col justify-between space-y-4">
+        <div>
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xs uppercase tracking-[0.2em] text-[#666] font-semibold flex items-center gap-2">
+              <span>Input Configuration</span>
+            </h2>
+            <span id="input-status-badge" class="text-xs font-mono px-2 py-0.5 rounded bg-[#141414] text-[#888] border border-[#222]">Checking input...</span>
+          </div>
+
+          <!-- Dropzone Area -->
+          <div id="dropzone-area" class="group relative flex flex-col justify-center items-center h-36 border-2 border-dashed border-[#262626] hover:border-[#444] rounded-lg transition-colors cursor-pointer bg-[#050505] p-4 text-center">
+            <input type="file" id="file-input" accept=".csv,.txt" class="hidden">
+            <div class="space-y-1.5 pointer-events-none">
+              <svg class="mx-auto h-7 w-7 text-[#555] group-hover:text-emerald-400 transition-colors" stroke="currentColor" fill="none" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              <p class="text-sm text-[#888]">Drop <strong class="text-emerald-400 font-mono">input.csv</strong> here or <span class="underline text-[#e0e0e0]">browse</span></p>
+              <p class="text-[10px] text-[#555] uppercase tracking-wider">CSV, JSON, or TXT with url column</p>
+            </div>
+          </div>
+
+          <!-- Upload Feedback / File Meta -->
+          <div id="file-info-box" class="mt-3 text-xs bg-[#0a0a0a] p-2.5 rounded-lg border border-[#1f1f1f] hidden flex items-center justify-between">
+            <div class="flex items-center space-x-2 truncate">
+              <span class="text-emerald-400 font-bold">✔</span>
+              <span id="file-name-display" class="font-mono text-[#e0e0e0] truncate">input.csv</span>
+              <span id="file-rows-display" class="text-emerald-400 font-mono text-xs">(0 URLs)</span>
+            </div>
+            <button id="re-upload-btn" class="text-[#888] hover:text-white underline text-[11px] shrink-0 cursor-pointer">Change</button>
+          </div>
+        </div>
+
+        <!-- Or Paste URLs manually -->
+        <div class="pt-3 border-t border-[#1f1f1f] flex items-center justify-between text-xs">
+          <span class="text-[#666]">Don't have a CSV file?</span>
+          <button id="open-paste-modal-btn" class="text-[#aaa] hover:text-white font-medium flex items-center gap-1.5 hover:underline cursor-pointer">
+            <span>✏️</span> <span>Paste URLs directly</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Right Column: Process Execution Controls (7 Cols) -->
+      <div class="lg:col-span-7 bg-[#0f0f0f] border border-[#1f1f1f] rounded-xl p-6 shadow-lg flex flex-col justify-between space-y-4">
+        <div>
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xs uppercase tracking-[0.2em] text-[#666] font-semibold flex items-center gap-2">
+              <span>Process Orchestrator</span>
+            </h2>
+            <div class="flex items-center space-x-2">
+              <span class="text-xs uppercase tracking-widest text-[#666]">Status:</span>
+              <span id="process-state-badge" class="text-xs font-mono uppercase px-2.5 py-0.5 rounded bg-[#141414] text-[#888] font-semibold border border-[#222]">IDLE</span>
+            </div>
+          </div>
+
+          <!-- Script Arguments & Config -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <div class="flex flex-col gap-1.5">
+              <label for="script-name-input" class="text-[10px] text-[#555] uppercase font-bold tracking-widest">Target Script</label>
+              <input type="text" id="script-name-input" value="email-scraper.js" class="bg-[#050505] border border-[#222] text-xs font-mono px-3 py-2 rounded focus:outline-none focus:border-emerald-500/50 text-[#e0e0e0]">
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="script-args-input" class="text-[10px] text-[#555] uppercase font-bold tracking-widest">Custom Arguments (optional)</label>
+              <input type="text" id="script-args-input" placeholder="e.g. --headless" class="bg-[#050505] border border-[#222] text-xs font-mono px-3 py-2 rounded focus:outline-none focus:border-emerald-500/50 text-[#e0e0e0]">
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex flex-wrap items-center gap-3 pt-3 border-t border-[#1f1f1f]">
+          <!-- Start Button -->
+          <button id="start-btn" class="flex-1 sm:flex-initial px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg shadow-lg shadow-emerald-900/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+            <span id="start-btn-icon">▶</span>
+            <span id="start-btn-label">Start Process</span>
+          </button>
+
+          <!-- Stop / Kill Button -->
+          <button id="stop-btn" disabled class="px-5 py-2.5 rounded-lg bg-[#1a1a1a] hover:bg-rose-950/60 border border-[#333] hover:border-rose-900/50 text-rose-300 font-semibold text-xs tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed">
+            <span>⏹</span>
+            <span>Stop Process</span>
+          </button>
+
+          <!-- Download Output File Dropdown/Button -->
+          <div class="relative inline-block text-left ml-auto">
+            <button id="download-output-btn" disabled class="px-4 py-2.5 rounded-lg bg-[#1a1a1a] hover:bg-[#222] border border-[#333] hover:border-emerald-500/50 text-[#888] hover:text-[#e0e0e0] font-medium text-xs tracking-wide transition-all flex items-center gap-2 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+              <span id="download-output-label">Download output.csv</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── ROW 2: LIVE METRICS & PROGRESS HUD ── -->
+    <div id="progress-hud-card" class="bg-[#0f0f0f] border border-[#1f1f1f] rounded-xl p-6 shadow-lg space-y-5">
+      
+      <!-- Progress Bar & Percentage -->
+      <div class="space-y-2.5">
+        <div class="flex justify-between items-end">
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <h2 class="text-xs uppercase tracking-[0.2em] text-[#666]">Progress</h2>
+              <span id="progress-stage-text" class="px-2 py-0.5 rounded bg-[#141414] text-emerald-400 font-mono text-[10px] uppercase border border-[#222]">Ready</span>
+            </div>
+            <p class="text-2xl font-light text-white flex items-baseline gap-2">
+              <span id="progress-percent" class="text-white font-mono">0%</span>
+              <span id="progress-ratio" class="text-xs text-[#666] font-normal italic">0 / 0 URLs</span>
+            </p>
+          </div>
+          <div class="text-right">
+            <p class="text-[10px] text-[#555] uppercase font-bold mb-1 tracking-widest">ETA Remaining</p>
+            <p id="stat-eta-text" class="text-sm font-mono text-white">--</p>
+          </div>
+        </div>
+
+        <!-- Outer Progress Bar -->
+        <div class="w-full h-2 bg-[#1a1a1a] rounded-full overflow-hidden">
+          <div id="progress-bar-fill" class="h-full bg-gradient-to-r from-emerald-600 to-teal-400 w-0 transition-all duration-300 ease-out"></div>
+        </div>
+      </div>
+
+      <!-- Live Target Item Display -->
+      <div class="bg-[#050505] rounded-lg px-4 py-2.5 border border-[#1f1f1f] flex items-center justify-between text-xs font-mono">
+        <div class="flex items-center space-x-2 truncate">
+          <span class="text-emerald-400 font-bold">Target &gt;&gt;</span>
+          <span id="current-url-text" class="text-[#aaa] truncate">Waiting for process start...</span>
+        </div>
+        <div class="flex items-center space-x-2 shrink-0 text-[#666]">
+          <span class="text-[10px] uppercase tracking-wider">Elapsed:</span>
+          <span id="stat-elapsed-time" class="text-white font-mono font-medium">00:00</span>
+        </div>
+      </div>
+
+      <!-- Metric Cards Grid (Live Analytics) -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <!-- Processed -->
+        <div class="bg-[#0a0a0a] border border-[#1f1f1f] p-3.5 rounded-lg text-center">
+          <p class="text-[10px] uppercase tracking-[0.2em] text-[#666] font-medium">Processed</p>
+          <p id="stat-processed" class="text-lg font-mono text-white mt-1">0</p>
+        </div>
+
+        <!-- Emails Found -->
+        <div class="bg-[#0a0a0a] border border-[#1f1f1f] p-3.5 rounded-lg text-center">
+          <p class="text-[10px] uppercase tracking-[0.2em] text-emerald-400 font-medium">Emails Found</p>
+          <p id="stat-found" class="text-lg font-mono text-emerald-400 mt-1">0</p>
+        </div>
+
+        <!-- Not Found -->
+        <div class="bg-[#0a0a0a] border border-[#1f1f1f] p-3.5 rounded-lg text-center">
+          <p class="text-[10px] uppercase tracking-[0.2em] text-[#666] font-medium">Not Found</p>
+          <p id="stat-not-found" class="text-lg font-mono text-[#aaa] mt-1">0</p>
+        </div>
+
+        <!-- Suspicious -->
+        <div class="bg-[#0a0a0a] border border-[#1f1f1f] p-3.5 rounded-lg text-center">
+          <p class="text-[10px] uppercase tracking-[0.2em] text-amber-400 font-medium">Suspicious</p>
+          <p id="stat-suspicious" class="text-lg font-mono text-amber-300 mt-1">0</p>
+        </div>
+
+        <!-- Channels: Web vs FB -->
+        <div class="bg-[#0a0a0a] border border-[#1f1f1f] p-3.5 rounded-lg text-center">
+          <p class="text-[10px] uppercase tracking-[0.2em] text-[#666] font-medium">Channels</p>
+          <p id="stat-channel-ratio" class="text-xs font-mono text-[#aaa] mt-1.5">Web: 0 | FB: 0</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── ROW 3: LIVE TERMINAL CONSOLE (SSE Stream) ── -->
+    <div class="bg-[#050505] border border-[#1f1f1f] rounded-xl shadow-2xl overflow-hidden flex flex-col">
+      
+      <!-- Terminal Window Bar -->
+      <div class="px-4 py-2.5 bg-[#0d0d0d] border-b border-[#1f1f1f] flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <div class="flex gap-1.5">
+            <div class="w-2 h-2 rounded-full bg-[#333]"></div>
+            <div class="w-2 h-2 rounded-full bg-[#333]"></div>
+            <div class="w-2 h-2 rounded-full bg-[#333]"></div>
+          </div>
+          <span class="text-[10px] text-[#666] uppercase tracking-widest font-bold ml-1">
+            Terminal Output (SSE Stream)
+          </span>
+        </div>
+
+        <!-- Terminal Controls -->
+        <div class="flex items-center space-x-2 text-xs">
+          <label class="flex items-center space-x-1.5 text-[#666] hover:text-[#aaa] cursor-pointer select-none">
+            <input type="checkbox" id="autoscroll-toggle" checked class="rounded border-[#333] bg-[#050505] text-emerald-500 focus:ring-0">
+            <span class="text-[11px] font-mono">Auto-scroll</span>
+          </label>
+          <div class="h-3 w-[1px] bg-[#222]"></div>
+          <button id="clear-terminal-btn" class="text-xs bg-[#1a1a1a] border border-[#333] px-2.5 py-0.5 rounded hover:bg-[#222] text-[#aaa] transition-colors cursor-pointer">
+            Clear
+          </button>
+          <button id="copy-logs-btn" class="text-xs bg-[#1a1a1a] border border-[#333] px-2.5 py-0.5 rounded hover:bg-[#222] text-[#aaa] transition-colors cursor-pointer">
+            Copy
+          </button>
+          <a id="download-logs-btn" href="/api/download/logs" target="_blank" class="text-xs bg-[#1a1a1a] border border-[#333] px-2.5 py-0.5 rounded hover:bg-[#222] text-[#aaa] transition-colors flex items-center gap-1 cursor-pointer">
+            Export .log
+          </a>
+        </div>
+      </div>
+
+      <!-- Terminal Logs Container -->
+      <div id="terminal-logs" class="p-4 bg-[#050505] font-mono text-xs text-[#e0e0e0] h-96 overflow-y-auto terminal-scroll leading-relaxed whitespace-pre-wrap select-text">
+        <div class="text-[#555] italic">Waiting for process to start or logs to stream...</div>
+      </div>
+
+      <!-- Terminal Bottom Info -->
+      <div class="px-4 py-1.5 bg-[#0d0d0d] border-t border-[#1f1f1f] flex items-center justify-between text-[11px] font-mono text-[#555]">
+        <div class="flex items-center space-x-3">
+          <span id="log-count-indicator">Lines: 0</span>
+          <span>•</span>
+          <span>Process: node [email-scraper.js]</span>
+        </div>
+        <div class="flex items-center space-x-2">
+          <span>Encoding: UTF-8 / ANSI-24bit</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── ROW 4: RESULTS PREVIEW & EXPORTS ── -->
+    <div class="bg-[#0f0f0f] border border-[#1f1f1f] rounded-xl p-6 shadow-lg space-y-4">
+      
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-4 border-b border-[#1f1f1f]">
+        <div>
+          <h2 class="text-xs uppercase tracking-[0.2em] text-[#666] font-semibold flex items-center gap-2">
+            <span>Discovered Data Preview</span>
+            <span id="results-count-pill" class="text-xs font-mono px-2 py-0.5 rounded bg-[#141414] text-[#888] border border-[#222]">0 rows</span>
+          </h2>
+          <p class="text-xs text-[#666] mt-0.5">Live records streaming directly into <code class="text-[#aaa]">output.csv</code></p>
+        </div>
+
+        <!-- Export Buttons Collection -->
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="inline-flex rounded border border-[#222] bg-[#050505] p-0.5 text-xs font-medium">
+            <button id="tab-output-btn" class="px-3 py-1 rounded bg-emerald-600 text-white font-medium cursor-pointer">Clean Output</button>
+            <button id="tab-suspicious-btn" class="px-3 py-1 rounded text-[#666] hover:text-[#e0e0e0] cursor-pointer">Suspicious (Flagged)</button>
+          </div>
+          <a id="download-suspicious-btn" href="/api/download/suspicious" class="text-xs bg-[#1a1a1a] border border-[#333] px-3 py-1.5 rounded hover:bg-[#222] text-[#aaa] hover:text-[#e0e0e0] transition-colors flex items-center gap-1.5 cursor-pointer">
+            <span class="text-amber-400">🚩</span> <span>suspicious.csv</span>
+          </a>
+          <a id="download-cache-btn" href="/api/download/cache" class="text-xs bg-[#1a1a1a] border border-[#333] px-3 py-1.5 rounded hover:bg-[#222] text-[#aaa] hover:text-[#e0e0e0] transition-colors flex items-center gap-1.5 cursor-pointer">
+            <span class="text-emerald-400">💾</span> <span>cache.json</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- Data Table -->
+      <div class="overflow-x-auto rounded-lg border border-[#1f1f1f]">
+        <table class="w-full text-left text-xs text-[#ccc]">
+          <thead class="bg-[#0d0d0d] text-[#666] font-mono text-[10px] uppercase tracking-widest border-b border-[#1f1f1f]">
+            <tr>
+              <th class="px-3.5 py-2.5">Business Name</th>
+              <th class="px-3.5 py-2.5">Email</th>
+              <th class="px-3.5 py-2.5">Phone</th>
+              <th class="px-3.5 py-2.5">Confidence</th>
+              <th class="px-3.5 py-2.5">Source</th>
+              <th class="px-3.5 py-2.5">Channel</th>
+              <th class="px-3.5 py-2.5">Status</th>
+            </tr>
+          </thead>
+          <tbody id="results-table-body" class="divide-y divide-[#1f1f1f] font-mono text-[11px] bg-[#050505]/40">
+            <tr>
+              <td colspan="7" class="px-4 py-8 text-center text-[#555] italic">No output records generated yet. Launch the process to stream live discoveries.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+
+    <!-- ── FOOTER BAR (Elegant Dark Signature) ── -->
+    <footer class="rounded-xl bg-[#0d0d0d] border border-[#1f1f1f] px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
+      <div class="flex items-center gap-6">
+        <div class="flex flex-col">
+          <span class="text-[10px] text-[#555] uppercase font-bold tracking-widest">Output Destination</span>
+          <span class="text-xs text-[#888] font-mono italic">output.csv &amp; suspicious.csv</span>
+        </div>
+        <div class="h-6 w-[1px] bg-[#222]"></div>
+        <div class="flex flex-col">
+          <span class="text-[10px] text-[#555] uppercase font-bold tracking-widest">Process Isolation</span>
+          <span class="text-xs text-[#888]">Non-blocking Node.js Child Process</span>
+        </div>
+      </div>
+      <div class="text-[#666] text-[11px]">
+        Elegant Dark Engine • CLI Wrapper
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- ── MODAL: PASTE URLS DIRECTLY ── -->
+  <div id="paste-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-[#0f0f0f] border border-[#1f1f1f] rounded-xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between">
+        <h3 class="text-xs uppercase tracking-[0.2em] text-[#666] font-semibold flex items-center gap-2">
+          <span>✏️</span> <span>Paste Target URLs</span>
+        </h3>
+        <button id="close-paste-modal-btn" class="text-[#666] hover:text-white text-lg font-bold cursor-pointer">&times;</button>
+      </div>
+      <p class="text-xs text-[#888]">Enter one website URL per line. We will automatically generate a clean <code class="text-emerald-400 font-mono">input.csv</code> for the scraper.</p>
+      <textarea id="manual-urls-textarea" rows="8" placeholder="https://example.com&#10;https://httpbin.org&#10;https://sample-biz.com" class="w-full bg-[#050505] border border-[#222] rounded-lg p-3 text-xs font-mono text-[#e0e0e0] focus:outline-none focus:border-emerald-500/50"></textarea>
+      <div class="flex items-center justify-end space-x-3 pt-2">
+        <button id="cancel-paste-modal-btn" class="px-3 py-1.5 text-xs text-[#666] hover:text-white cursor-pointer">Cancel</button>
+        <button id="save-urls-btn" class="px-4 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg shadow-lg shadow-emerald-900/20 transition-all cursor-pointer">Save to input.csv</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── FRONTEND JAVASCRIPT LOGIC ── -->
+  <script>
+    // State
+    let isRunning = false;
+    let autoScroll = true;
+    let eventSource = null;
+    let elapsedTimer = null;
+    let runStartTime = null;
+    let activeTab = 'output'; // 'output' | 'suspicious'
+
+    // DOM Elements
+    const connectionStatusPill = document.getElementById('connection-status-pill');
+    const connectionIndicatorDot = document.getElementById('connection-indicator-dot');
+    const connectionStatusText = document.getElementById('connection-status-text');
+
+    const checkpointBanner = document.getElementById('checkpoint-banner');
+    const checkpointCount = document.getElementById('checkpoint-count');
+    const resumeCheckbox = document.getElementById('resume-checkbox');
+    const resetCheckpointBtn = document.getElementById('reset-checkpoint-btn');
+
+    const dropzoneArea = document.getElementById('dropzone-area');
+    const fileInput = document.getElementById('file-input');
+    const fileInfoBox = document.getElementById('file-info-box');
+    const fileNameDisplay = document.getElementById('file-name-display');
+    const fileRowsDisplay = document.getElementById('file-rows-display');
+    const reUploadBtn = document.getElementById('re-upload-btn');
+    const inputStatusBadge = document.getElementById('input-status-badge');
+
+    const openPasteModalBtn = document.getElementById('open-paste-modal-btn');
+    const pasteModal = document.getElementById('paste-modal');
+    const closePasteModalBtn = document.getElementById('close-paste-modal-btn');
+    const cancelPasteModalBtn = document.getElementById('cancel-paste-modal-btn');
+    const saveUrlsBtn = document.getElementById('save-urls-btn');
+    const manualUrlsTextarea = document.getElementById('manual-urls-textarea');
+
+    const scriptNameInput = document.getElementById('script-name-input');
+    const scriptArgsInput = document.getElementById('script-args-input');
+    const processStateBadge = document.getElementById('process-state-badge');
+    const startBtn = document.getElementById('start-btn');
+    const startBtnLabel = document.getElementById('start-btn-label');
+    const stopBtn = document.getElementById('stop-btn');
+    const selftestBtn = document.getElementById('selftest-btn');
+
+    const downloadOutputBtn = document.getElementById('download-output-btn');
+    const downloadOutputLabel = document.getElementById('download-output-label');
+    const downloadSuspiciousBtn = document.getElementById('download-suspicious-btn');
+    const downloadCacheBtn = document.getElementById('download-cache-btn');
+
+    const progressBarFill = document.getElementById('progress-bar-fill');
+    const progressPercent = document.getElementById('progress-percent');
+    const progressRatio = document.getElementById('progress-ratio');
+    const progressStageText = document.getElementById('progress-stage-text');
+    const currentUrlText = document.getElementById('current-url-text');
+    const statEtaText = document.getElementById('stat-eta-text');
+
+    const statProcessed = document.getElementById('stat-processed');
+    const statFound = document.getElementById('stat-found');
+    const statNotFound = document.getElementById('stat-not-found');
+    const statSuspicious = document.getElementById('stat-suspicious');
+    const statChannelRatio = document.getElementById('stat-channel-ratio');
+    const statElapsedTime = document.getElementById('stat-elapsed-time');
+
+    const terminalLogs = document.getElementById('terminal-logs');
+    const autoscrollToggle = document.getElementById('autoscroll-toggle');
+    const clearTerminalBtn = document.getElementById('clear-terminal-btn');
+    const copyLogsBtn = document.getElementById('copy-logs-btn');
+    const logCountIndicator = document.getElementById('log-count-indicator');
+
+    const tabOutputBtn = document.getElementById('tab-output-btn');
+    const tabSuspiciousBtn = document.getElementById('tab-suspicious-btn');
+    const resultsCountPill = document.getElementById('results-count-pill');
+    const resultsTableBody = document.getElementById('results-table-body');
+
+    let totalLogLines = 0;
+
+    // ── ANSI ESCAPE CODE TO HTML PARSER (Supports 24-bit RGB) ──
+    function ansiToHtml(str) {
+      if (!str) return '';
+
+      // Escape raw HTML characters
+      let s = str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+      // 24-bit foreground color: \x1b[38;2;R;G;Bm
+      s = s.replace(/\x1b\[38;2;(\d+);(\d+);(\d+)m/g, (match, r, g, b) => {
+        return `<span style="color: rgb(${r}, ${g}, ${b});">`;
+      });
+
+      // 24-bit background color: \x1b[48;2;R;G;Bm
+      s = s.replace(/\x1b\[48;2;(\d+);(\d+);(\d+)m/g, (match, r, g, b) => {
+        return `<span style="background-color: rgb(${r}, ${g}, ${b});">`;
+      });
+
+      // Standard colors & attributes
+      const ansiMap = {
+        '0': '</span>',
+        '1': '<span class="font-bold">',
+        '2': '<span class="opacity-60">',
+        '3': '<span class="italic">',
+        '4': '<span class="underline">',
+        '30': '<span class="text-slate-800">',
+        '31': '<span class="text-rose-400">',
+        '32': '<span class="text-emerald-400">',
+        '33': '<span class="text-amber-300">',
+        '34': '<span class="text-blue-400">',
+        '35': '<span class="text-fuchsia-400">',
+        '36': '<span class="text-cyan-300">',
+        '37': '<span class="text-slate-200">',
+        '90': '<span class="text-slate-500">',
+        '91': '<span class="text-rose-300">',
+        '92': '<span class="text-emerald-300">',
+        '93': '<span class="text-amber-200">',
+        '94': '<span class="text-blue-300">',
+        '95': '<span class="text-fuchsia-300">',
+        '96': '<span class="text-cyan-200">',
+        '97': '<span class="text-white">',
+      };
+
+      // Handle standard codes
+      s = s.replace(/\x1b\[(\d+)m/g, (match, code) => ansiMap[code] || '');
+      
+      // Clean up remaining unhandled escape codes
+      s = s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+
+      return s;
+    }
+
+    // Append a line to terminal DOM
+    function appendTerminalLine(text, stream = 'stdout') {
+      const lineDiv = document.createElement('div');
+      lineDiv.className = stream === 'stderr' ? 'text-rose-300' : 'text-slate-300';
+      lineDiv.innerHTML = ansiToHtml(text);
+
+      terminalLogs.appendChild(lineDiv);
+      totalLogLines++;
+      logCountIndicator.textContent = `Lines: ${totalLogLines}`;
+
+      if (autoScroll) {
+        terminalLogs.scrollTop = terminalLogs.scrollHeight;
+      }
+    }
+
+    // ── CONNECT TO SERVER-SENT EVENTS (SSE) ──
+    function connectSSE() {
+      if (eventSource) {
+        eventSource.close();
+      }
+
+      eventSource = new EventSource('/api/events');
+
+      eventSource.onopen = () => {
+        connectionIndicatorDot.className = 'h-2 w-2 rounded-full bg-emerald-400';
+        connectionStatusText.textContent = 'SSE Connected';
+        connectionStatusText.className = 'text-emerald-400 font-mono';
+      };
+
+      eventSource.onerror = () => {
+        connectionIndicatorDot.className = 'h-2 w-2 rounded-full bg-rose-500';
+        connectionStatusText.textContent = 'Reconnecting...';
+        connectionStatusText.className = 'text-rose-400 font-mono';
+      };
+
+      // Initial Snapshot
+      eventSource.addEventListener('init', e => {
+        try {
+          const data = JSON.parse(e.data);
+          updateStatus(data.status);
+          if (data.progress) updateProgress(data.progress);
+          if (data.checkpoint) updateCheckpointUI(data.checkpoint);
+        } catch {}
+      });
+
+      // Live Log Line
+      eventSource.addEventListener('log', e => {
+        try {
+          const item = JSON.parse(e.data);
+          appendTerminalLine(item.text, item.stream);
+        } catch {}
+      });
+
+      // Structured Progress Update
+      eventSource.addEventListener('progress', e => {
+        try {
+          const prog = JSON.parse(e.data);
+          updateProgress(prog);
+        } catch {}
+      });
+
+      // Process Status Changed (running, completed, stopped, error)
+      eventSource.addEventListener('status', e => {
+        try {
+          const st = JSON.parse(e.data);
+          updateStatus(st.status);
+          fetchPreview();
+          checkStatus();
+        } catch {}
+      });
+
+      // Clear terminal triggered from server
+      eventSource.addEventListener('clear_logs', () => {
+        terminalLogs.innerHTML = '';
+        totalLogLines = 0;
+        logCountIndicator.textContent = 'Lines: 0';
+      });
+    }
+
+    // ── UPDATE UI ELEMENTS ──
+    function updateProgress(prog) {
+      const pct = Math.min(100, Math.max(0, prog.percent || 0));
+      progressBarFill.style.width = `${pct}%`;
+      progressPercent.textContent = `${pct}%`;
+
+      if (prog.total > 0) {
+        progressRatio.textContent = `${prog.processed || 0} / ${prog.total} URLs`;
+      }
+      if (prog.stage) {
+        progressStageText.textContent = prog.stage;
+      }
+      if (prog.currentItem) {
+        currentUrlText.textContent = prog.currentItem;
+      }
+      if (prog.eta) {
+        statEtaText.textContent = prog.eta;
+      }
+
+      statProcessed.textContent = prog.processed || 0;
+      statFound.textContent = prog.found || 0;
+      statNotFound.textContent = prog.notFound || 0;
+      statSuspicious.textContent = prog.suspicious || 0;
+
+      // Update download button readiness
+      if ((prog.found && prog.found > 0) || !isRunning) {
+        downloadOutputBtn.disabled = false;
+        downloadOutputLabel.textContent = `Download output.csv (${prog.found || 0} found)`;
+      }
+    }
+
+    function updateStatus(status) {
+      isRunning = status === 'running';
+
+      if (isRunning) {
+        processStateBadge.textContent = 'RUNNING';
+        processStateBadge.className = 'text-xs font-mono uppercase px-2.5 py-0.5 rounded bg-[#141414] text-emerald-400 font-semibold border border-emerald-800/60 animate-pulse';
+        
+        startBtn.disabled = true;
+        startBtnLabel.textContent = 'Process Active...';
+        stopBtn.disabled = false;
+
+        if (!elapsedTimer) {
+          runStartTime = Date.now();
+          elapsedTimer = setInterval(updateElapsed, 1000);
+        }
+      } else {
+        const isComplete = status === 'completed';
+        const isStopped = status === 'stopped';
+        const isError = status === 'error';
+
+        processStateBadge.textContent = status.toUpperCase();
+        if (isComplete) {
+          processStateBadge.className = 'text-xs font-mono uppercase px-2.5 py-0.5 rounded bg-[#141414] text-emerald-400 font-semibold border border-emerald-900/60';
+        } else if (isStopped || isError) {
+          processStateBadge.className = 'text-xs font-mono uppercase px-2.5 py-0.5 rounded bg-[#141414] text-rose-400 font-semibold border border-rose-900/60';
+        } else {
+          processStateBadge.className = 'text-xs font-mono uppercase px-2.5 py-0.5 rounded bg-[#141414] text-[#888] font-semibold border border-[#222]';
+        }
+
+        startBtn.disabled = false;
+        startBtnLabel.textContent = 'Start Process';
+        stopBtn.disabled = true;
+
+        if (elapsedTimer) {
+          clearInterval(elapsedTimer);
+          elapsedTimer = null;
+        }
+
+        fetchPreview();
+      }
+    }
+
+    function updateElapsed() {
+      if (!runStartTime) return;
+      const sec = Math.floor((Date.now() - runStartTime) / 1000);
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      statElapsedTime.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    function updateCheckpointUI(cp) {
+      if (cp.hasCheckpoint && cp.cachedUrls > 0) {
+        checkpointBanner.classList.remove('hidden');
+        checkpointCount.textContent = cp.cachedUrls;
+      } else {
+        checkpointBanner.classList.add('hidden');
+      }
+    }
+
+    // ── SERVER API CALLS ──
+    async function checkStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+
+        updateStatus(data.status);
+        if (data.progress) updateProgress(data.progress);
+        if (data.checkpoint) updateCheckpointUI(data.checkpoint);
+
+        // Input file badge
+        if (data.files && data.files.input && data.files.input.exists) {
+          inputStatusBadge.textContent = `${data.files.input.rows} URLs loaded`;
+          inputStatusBadge.className = 'text-xs font-mono px-2 py-0.5 rounded bg-[#141414] text-emerald-400 border border-emerald-900/60';
+          
+          fileInfoBox.classList.remove('hidden');
+          fileNameDisplay.textContent = 'input.csv';
+          fileRowsDisplay.textContent = `(${data.files.input.rows} URLs ready)`;
+        } else {
+          inputStatusBadge.textContent = 'No input.csv';
+          inputStatusBadge.className = 'text-xs font-mono px-2 py-0.5 rounded bg-[#141414] text-rose-400 border border-rose-900/60';
+        }
+
+        // Output file download state
+        if (data.files && data.files.output && data.files.output.exists) {
+          downloadOutputBtn.disabled = false;
+          downloadOutputLabel.textContent = `Download output.csv (${data.files.output.rows} records)`;
+        }
+      } catch (err) {
+        console.error('Failed to poll status', err);
+      }
+    }
+
+    // Start script
+    async function startScript() {
+      const scriptName = scriptNameInput.value.trim() || 'email-scraper.js';
+      const rawArgs = scriptArgsInput.value.trim();
+      const args = rawArgs ? rawArgs.split(' ').filter(Boolean) : [];
+      const resume = resumeCheckbox.checked;
+
+      startBtn.disabled = true;
+      startBtnLabel.textContent = 'Launching...';
+
+      try {
+        const res = await fetch('/api/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            scriptName,
+            args,
+            resume
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          alert(`Could not start script: ${data.error}`);
+          startBtn.disabled = false;
+          startBtnLabel.textContent = 'Start Script';
+        } else {
+          updateStatus('running');
+        }
+      } catch (err) {
+        alert(`Request failed: ${err.message}`);
+        startBtn.disabled = false;
+        startBtnLabel.textContent = 'Start Script';
+      }
+    }
+
+    // Stop script
+    async function stopScript() {
+      if (!confirm('Are you sure you want to stop the running process?')) return;
+      stopBtn.disabled = true;
+      try {
+        const res = await fetch('/api/stop', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) {
+          alert(`Stop error: ${data.error}`);
+        }
+      } catch (err) {
+        alert(`Failed to send stop signal: ${err.message}`);
+      }
+    }
+
+    // Run self-test
+    async function runSelfTest() {
+      selftestBtn.disabled = true;
+      selftestBtn.innerHTML = '<span>⏳</span> <span>Testing...</span>';
+      try {
+        const res = await fetch('/api/selftest', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          appendTerminalLine('\n✔ [SELF-TEST] Pure function validation passed!', 'stdout');
+        } else {
+          appendTerminalLine('\n✘ [SELF-TEST FAILED] ' + (data.output || 'Exited with code ' + data.exitCode), 'stderr');
+        }
+      } catch (err) {
+        appendTerminalLine('Self-test request error: ' + err.message, 'stderr');
+      } finally {
+        selftestBtn.disabled = false;
+        selftestBtn.innerHTML = '<span>🧪</span> <span>Self-Test</span>';
+      }
+    }
+
+    // Upload CSV
+    async function handleFileUpload(file) {
+      if (!file) return;
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      inputStatusBadge.textContent = 'Uploading...';
+      inputStatusBadge.className = 'text-xs font-mono px-2 py-0.5 rounded bg-[#141414] text-amber-400 border border-amber-900/60';
+
+      try {
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (res.ok) {
+          fileInfoBox.classList.remove('hidden');
+          fileNameDisplay.textContent = file.name;
+          fileRowsDisplay.textContent = `(${data.totalRows} URLs, col: ${data.urlColumn || 'found'})`;
+          inputStatusBadge.textContent = `${data.totalRows} URLs ready`;
+          inputStatusBadge.className = 'text-xs font-mono px-2 py-0.5 rounded bg-[#141414] text-emerald-400 border border-emerald-900/60';
+          checkStatus();
+        } else {
+          alert(`Upload failed: ${data.error}`);
+          checkStatus();
+        }
+      } catch (err) {
+        alert(`Upload error: ${err.message}`);
+        checkStatus();
+      }
+    }
+
+    // Save manual URLs directly
+    async function handleSaveManualUrls() {
+      const text = manualUrlsTextarea.value.trim();
+      if (!text) {
+        alert('Please enter at least one URL');
+        return;
+      }
+
+      saveUrlsBtn.disabled = true;
+      saveUrlsBtn.textContent = 'Saving...';
+
+      try {
+        const res = await fetch('/api/input-urls', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ urls: text })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          pasteModal.classList.add('hidden');
+          manualUrlsTextarea.value = '';
+          checkStatus();
+        } else {
+          alert(`Failed to save URLs: ${data.error}`);
+        }
+      } catch (err) {
+        alert(`Error: ${err.message}`);
+      } finally {
+        saveUrlsBtn.disabled = false;
+        saveUrlsBtn.textContent = 'Save to input.csv';
+      }
+    }
+
+    // Fetch data preview for output table
+    async function fetchPreview() {
+      try {
+        const res = await fetch(`/api/preview/${activeTab}`);
+        const data = await res.json();
+
+        if (data.exists && data.rows && data.rows.length > 0) {
+          resultsCountPill.textContent = `${data.totalCount} records`;
+          renderPreviewRows(data.rows);
+        } else {
+          resultsCountPill.textContent = `0 rows`;
+          resultsTableBody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-[#555] italic">No output records generated yet. Launch the process to stream live discoveries.</td></tr>`;
+        }
+      } catch (err) {
+        console.error('Failed to fetch preview', err);
+      }
+    }
+
+    function renderPreviewRows(rows) {
+      resultsTableBody.innerHTML = rows.map(r => {
+        const isFound = r.status === 'found';
+        const isSusp = r.suspicious === true || r.suspicious === 'true';
+        
+        return `
+          <tr class="hover:bg-[#121212] transition-colors">
+            <td class="px-3.5 py-2.5 text-[#ccc] truncate max-w-[150px]" title="${r.business_name || ''}">${r.business_name || '-'}</td>
+            <td class="px-3.5 py-2.5 font-semibold truncate max-w-[200px]" title="${r.email || ''}">
+              ${r.email ? `<span class="${isSusp ? 'text-amber-400' : 'text-emerald-400'} font-mono">${r.email}</span>` : '<span class="text-[#555]">-</span>'}
+            </td>
+            <td class="px-3.5 py-2.5 text-[#888] truncate max-w-[120px] font-mono">${r.phone || '-'}</td>
+            <td class="px-3.5 py-2.5">
+              <span class="px-1.5 py-0.5 rounded text-[10px] uppercase font-bold font-mono ${
+                r.confidence === 'high' ? 'bg-[#141414] text-emerald-400 border border-emerald-900/60' :
+                r.confidence === 'medium' ? 'bg-[#141414] text-teal-400 border border-teal-900/60' :
+                'bg-[#141414] text-[#888] border border-[#222]'
+              }">${r.confidence || 'low'}</span>
+            </td>
+            <td class="px-3.5 py-2.5 text-[#888] font-mono">${r.email_source || '-'}</td>
+            <td class="px-3.5 py-2.5">
+              <span class="text-[10px] text-[#888] font-mono">${r.channel || '-'}</span>
+            </td>
+            <td class="px-3.5 py-2.5">
+              <span class="px-2 py-0.5 rounded text-[10px] font-semibold font-mono ${
+                isFound ? 'bg-[#141414] text-emerald-400 border border-emerald-900/60' : 'bg-[#141414] text-[#666] border border-[#222]'
+              }">${r.status || 'pending'}</span>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // ── EVENT LISTENERS ──
+
+    // Drag & Drop
+    dropzoneArea.addEventListener('click', () => fileInput.click());
+    reUploadBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', e => {
+      if (e.target.files && e.target.files[0]) {
+        handleFileUpload(e.target.files[0]);
+      }
+    });
+
+    ['dragenter', 'dragover'].forEach(name => {
+      dropzoneArea.addEventListener(name, e => {
+        e.preventDefault();
+        dropzoneArea.classList.add('border-emerald-500/80', 'bg-[#141414]');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach(name => {
+      dropzoneArea.addEventListener(name, e => {
+        e.preventDefault();
+        dropzoneArea.classList.remove('border-emerald-500/80', 'bg-[#141414]');
+      });
+    });
+
+    dropzoneArea.addEventListener('drop', e => {
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+        handleFileUpload(e.dataTransfer.files[0]);
+      }
+    });
+
+    // Modal Events
+    openPasteModalBtn.addEventListener('click', () => pasteModal.classList.remove('hidden'));
+    closePasteModalBtn.addEventListener('click', () => pasteModal.classList.add('hidden'));
+    cancelPasteModalBtn.addEventListener('click', () => pasteModal.classList.add('hidden'));
+    saveUrlsBtn.addEventListener('click', handleSaveManualUrls);
+
+    // Process Actions
+    startBtn.addEventListener('click', startScript);
+    stopBtn.addEventListener('click', stopScript);
+    selftestBtn.addEventListener('click', runSelfTest);
+
+    // Downloads
+    downloadOutputBtn.addEventListener('click', () => {
+      window.location.href = '/api/download/output';
+    });
+
+    // Terminal Tools
+    autoscrollToggle.addEventListener('change', e => {
+      autoScroll = e.target.checked;
+    });
+
+    clearTerminalBtn.addEventListener('click', async () => {
+      terminalLogs.innerHTML = '';
+      totalLogLines = 0;
+      logCountIndicator.textContent = 'Lines: 0';
+      await fetch('/api/clear-logs', { method: 'POST' }).catch(() => {});
+    });
+
+    copyLogsBtn.addEventListener('click', () => {
+      const text = terminalLogs.innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        const oldText = copyLogsBtn.textContent;
+        copyLogsBtn.textContent = 'Copied!';
+        setTimeout(() => copyLogsBtn.textContent = oldText, 1500);
+      });
+    });
+
+    // Tab Switching
+    tabOutputBtn.addEventListener('click', () => {
+      activeTab = 'output';
+      tabOutputBtn.className = 'px-3 py-1 rounded bg-emerald-600 text-white font-medium cursor-pointer';
+      tabSuspiciousBtn.className = 'px-3 py-1 rounded text-[#666] hover:text-[#e0e0e0] cursor-pointer';
+      fetchPreview();
+    });
+
+    tabSuspiciousBtn.addEventListener('click', () => {
+      activeTab = 'suspicious';
+      tabSuspiciousBtn.className = 'px-3 py-1 rounded bg-amber-600 text-white font-medium cursor-pointer';
+      tabOutputBtn.className = 'px-3 py-1 rounded text-[#666] hover:text-[#e0e0e0] cursor-pointer';
+      fetchPreview();
+    });
+
+    // Reset Checkpoint
+    resetCheckpointBtn.addEventListener('click', async () => {
+      if (!confirm('This will archive your existing cache.json checkpoint and start fresh on the next run. Continue?')) return;
+      try {
+        await fetch('/api/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clearCache: true, scriptName: 'none' })
+        }).catch(() => {});
+      } catch {}
+      checkpointBanner.classList.add('hidden');
+      alert('Checkpoint archived. Next run will start from URL 1.');
+      checkStatus();
+    });
+
+    // ── INITIALIZATION ──
+    window.addEventListener('DOMContentLoaded', () => {
+      connectSSE();
+      checkStatus();
+      fetchPreview();
+      // Periodically refresh preview and status
+      setInterval(checkStatus, 4000);
+      setInterval(fetchPreview, 6000);
+    });
+  </script>
+
+</body>
+</html>

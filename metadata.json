@@ -1,0 +1,6 @@
+{
+  "name": "CLI Script Dashboard & Runner",
+  "description": "A high-performance dark-themed web dashboard and Express wrapper to run CLI scripts in the background with SSE live terminal streaming, regex progress parsing, input uploads, crash-resume, and output exports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
